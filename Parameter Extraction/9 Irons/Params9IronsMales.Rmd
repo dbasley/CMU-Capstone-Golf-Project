@@ -1,0 +1,526 @@
+---
+title: "Extract Parameters for 9 Iron Males"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Load Data and Filter to Only 9 Iron Male Shots
+
+```{r}
+library(tidyverse)
+library(mgcv)
+library(gam)
+library(kableExtra)
+# load in data
+df_st_club <- read_csv("Data Cleaning/Output Data/Cleaned_Standard_Clubs.csv")
+
+# Filter df for only 9 Irons
+df_9iron_lim <- filter(df_st_club, Club == "9 Iron" & Sex == "Male")
+```
+
+# Build the GAMs
+
+```{r}
+# Side model
+iron_side_final <- gam::gam(`Max Height - Side` ~
+  gam::s(`Club Speed`) +
+  gam::s(`Attack Angle`) +
+  gam::s(`Swing Plane`) +
+  gam::s(`Face Angle`) +
+  gam::s(`Club Path`) +
+  gam::s(shaft_lean), data = df_9iron_lim)
+
+# Height model
+iron_height_final <- gam::gam(`Max Height - Height` ~
+  gam::s(`Club Speed`) +
+  gam::s(`Attack Angle`) +
+  gam::s(`Swing Plane`) +
+  gam::s(`Face Angle`) +
+  gam::s(`Club Path`) +
+  gam::s(shaft_lean), data = df_9iron_lim)
+```
+
+# Define Quartiles and Tuning for Quadrant Sizes
+
+```{r}
+# First distance quartile
+q1_dist <- quantile(df_9iron_lim$`Est. Total Flat - Length`, 0.25)
+# Second Distance quartile
+median_dist <- quantile(df_9iron_lim$`Est. Total Flat - Length`, 0.50)
+# Third Distance quartile
+q3_dist <- quantile(df_9iron_lim$`Est. Total Flat - Length`, 0.75)
+
+# 0-25% of data, divide height standard deviation by this
+sd_divisor_side_1 <- 1
+# 25-50% of data, divde height standard deviation by this
+sd_divisor_side_2 <- 1
+# 0-25% of data, divide height standard deviation by this
+sd_divisor_side_3 <- 1
+# 25-100% of data, divide height standard deviation by this
+sd_divisor_side_4 <- 1
+
+# 0-25% of data, divide height standard deviation by this
+sd_divisor_height_1 <- 2
+# 25-50% of data, divide height standard deviation by this
+sd_divisor_height_2 <- 2
+# 0-25% of data, divide height standard deviation by this
+sd_divisor_height_3 <- 2
+# 25-100% of data, divide height standard deviation by this
+sd_divisor_height_4 <- 2
+```
+
+# Calculate the Side Bounds for the Fluid Quadrant
+
+```{r}
+# Split for 9 Irons and fades by sign
+df_9iron_lim$side_class_acc <- ifelse(df_9iron_lim$`Max Height - Side` > 0, "Draw", "Fade")
+
+# Limit data to first quartile
+df_9iron_lim_side1 <- filter(df_9iron_lim, `Est. Total Flat - Length` < q1_dist)
+# Get standard deviation
+sd_lim_side1 <- sd(df_9iron_lim_side1$`Max Height - Side`)
+
+# Limit data to second quartile
+df_9iron_lim_side2 <- filter(df_9iron_lim, `Est. Total Flat - Length` >= q1_dist)
+df_9iron_lim_side2 <- filter(df_9iron_lim_side2, `Est. Total Flat - Length` < median_dist)
+# Get standard deviation
+sd_lim_side2 <- sd(df_9iron_lim_side2$`Max Height - Side`)
+
+# Limit data to third quartile
+df_9iron_lim_side3 <- filter(df_9iron_lim, `Est. Total Flat - Length` >= median_dist)
+df_9iron_lim_side3 <- filter(df_9iron_lim_side3, `Est. Total Flat - Length` < q3_dist)
+# Get standard deviation
+sd_lim_side3 <- sd(df_9iron_lim_side3$`Max Height - Side`)
+
+# Limit data to fourth quartile
+df_9iron_lim_side4 <- filter(df_9iron_lim, `Est. Total Flat - Length` >= q3_dist)
+# Get standard deviation
+sd_lim_side4 <- sd(df_9iron_lim_side4$`Max Height - Side`)
+
+# Classify straights
+for (i in 1:nrow(df_9iron_lim)) {
+  # Check to see if shot is in q1
+  if (df_9iron_lim[i, "Est. Total Flat - Length"] < q1_dist) {
+    # Classify as straight is criteria is met
+    if (df_9iron_lim[i, "Max Height - Side"] < sd_lim_side1 / sd_divisor_side_1 &
+      df_9iron_lim[i, "Max Height - Side"] > -sd_lim_side1 / sd_divisor_side_1) {
+      # Accessing the 'side_class' column by name to assign "Straight"
+      df_9iron_lim[i, "side_class_acc"] <- "Straight"
+    }
+    # Check to see if shot is in q2
+  } else if (df_9iron_lim[i, "Est. Total Flat - Length"] < median_dist) {
+    # Classify as straight is criteria is met
+    if (df_9iron_lim[i, "Max Height - Side"] < sd_lim_side2 / sd_divisor_side_2 &
+      df_9iron_lim[i, "Max Height - Side"] > -sd_lim_side2 / sd_divisor_side_2) {
+      df_9iron_lim[i, "side_class_acc"] <- "Straight"
+    }
+    # Check to see if shot is in q3
+  } else if (df_9iron_lim[i, "Est. Total Flat - Length"] < q3_dist) {
+    # Classify as straight is criteria is met
+    if (df_9iron_lim[i, "Max Height - Side"] < sd_lim_side3 / sd_divisor_side_3 &
+      df_9iron_lim[i, "Max Height - Side"] > -sd_lim_side3 / sd_divisor_side_3) {
+      df_9iron_lim[i, "side_class_acc"] <- "Straight"
+    }
+    # Check to see if shot is in q4
+  } else {
+    # Classify as straight is criteria is met
+    if (df_9iron_lim[i, "Max Height - Side"] < sd_lim_side4 / sd_divisor_side_4 &
+      df_9iron_lim[i, "Max Height - Side"] > -sd_lim_side4 / sd_divisor_side_4) {
+      df_9iron_lim[i, "side_class_acc"] <- "Straight"
+    }
+  }
+}
+```
+
+# Calculate the Height Bounds for the Fluid Quadrant
+
+```{r}
+# Define height class variable
+df_9iron_lim$height_class_acc <- "Medium"
+
+# Limit data to first quartile
+df_9iron_lim_height1 <- filter(df_9iron_lim, `Est. Total Flat - Length` < q1_dist)
+# Get mean and standard deviation
+mean_lim_height1 <- mean(df_9iron_lim_height1$`Max Height - Height`)
+mean_lim_height1 <- 96
+sd_lim_height1 <- sd(df_9iron_lim_height1$`Max Height - Height`)
+
+# Limit data to second quartile
+df_9iron_lim_height2 <- filter(df_9iron_lim, `Est. Total Flat - Length` >= q1_dist)
+df_9iron_lim_height2 <- filter(df_9iron_lim_height2, `Est. Total Flat - Length` < median_dist)
+# Get mean and standard deviation
+mean_lim_height2 <- mean(df_9iron_lim_height2$`Max Height - Height`)
+mean_lim_height2 <- 96
+sd_lim_height2 <- sd(df_9iron_lim_height2$`Max Height - Height`)
+
+# Limit data to third quartile
+df_9iron_lim_height3 <- filter(df_9iron_lim, `Est. Total Flat - Length` >= median_dist)
+df_9iron_lim_height3 <- filter(df_9iron_lim_height3, `Est. Total Flat - Length` < q3_dist)
+# Get mean and standard deviation
+mean_lim_height3 <- mean(df_9iron_lim_height3$`Max Height - Height`)
+mean_lim_height3 <- 96
+sd_lim_height3 <- sd(df_9iron_lim_height3$`Max Height - Height`)
+
+# Limit data to fourth quartile
+df_9iron_lim_height4 <- filter(df_9iron_lim, `Est. Total Flat - Length` >= q3_dist)
+# Get mean and standard deviation
+mean_lim_height4 <- mean(df_9iron_lim_height4$`Max Height - Height`)
+mean_lim_height4 <- 96
+sd_lim_height4 <- sd(df_9iron_lim_height4$`Max Height - Height`)
+
+# Classify height
+for (i in 1:nrow(df_9iron_lim)) {
+  # Check if shot is in distance q1
+  if (df_9iron_lim[i, "Est. Total Flat - Length"] < q1_dist) {
+    # Classify as high/low/medium based on criteria
+    if (df_9iron_lim[i, "Max Height - Height"] > (mean_lim_height1 + sd_lim_height1 / sd_divisor_height_1)) {
+      df_9iron_lim[i, "height_class_acc"] <- "High"
+    }
+    if (df_9iron_lim[i, "Max Height - Height"] < (mean_lim_height1 - sd_lim_height1 / sd_divisor_height_1)) {
+      df_9iron_lim[i, "height_class_acc"] <- "Low"
+    }
+    # Check if shot is in distance q1
+  } else if (df_9iron_lim[i, "Est. Total Flat - Length"] < median_dist) {
+    # Classify as high/low/medium based on criteria
+    if (df_9iron_lim[i, "Max Height - Height"] > (mean_lim_height2 + sd_lim_height2 / sd_divisor_height_2)) {
+      df_9iron_lim[i, "height_class_acc"] <- "High"
+    }
+    if (df_9iron_lim[i, "Max Height - Height"] < (mean_lim_height2 - sd_lim_height2 / sd_divisor_height_2)) {
+      df_9iron_lim[i, "height_class_acc"] <- "Low"
+    }
+    # Check if shot is in distance q1
+  } else if (df_9iron_lim[i, "Est. Total Flat - Length"] < q3_dist) {
+    # Classify as high/low/medium based on criteria
+    if (df_9iron_lim[i, "Max Height - Height"] > (mean_lim_height3 + sd_lim_height3 / sd_divisor_height_3)) {
+      df_9iron_lim[i, "height_class_acc"] <- "High"
+    }
+    if (df_9iron_lim[i, "Max Height - Height"] < (mean_lim_height3 - sd_lim_height3 / sd_divisor_height_3)) {
+      df_9iron_lim[i, "height_class_acc"] <- "Low"
+    }
+    # Check if shot is in distance q1
+  } else {
+    # Classify as high/low/medium based on criteria
+    if (df_9iron_lim[i, "Max Height - Height"] > (mean_lim_height4 + sd_lim_height4 / sd_divisor_height_4)) {
+      df_9iron_lim[i, "height_class_acc"] <- "High"
+    }
+    if (df_9iron_lim[i, "Max Height - Height"] < (mean_lim_height4 - sd_lim_height4 / sd_divisor_height_4)) {
+      df_9iron_lim[i, "height_class_acc"] <- "Low"
+    }
+  }
+}
+```
+
+# Histogram of Quartile Splits by Distance
+
+```{r}
+hist(df_9iron_lim$`Est. Total Flat - Length`, breaks = 25, main = "Distribution of Total Distance a Ball Travels\n(9 Irons - Males)", xlab = "Distance Traveled Forward (yds)", col = "lightgrey")
+abline(v = q1_dist, col = "red", lty = 2)
+abline(v = median_dist, col = "red", lty = 2)
+abline(v = q3_dist, col = "red", lty = 2)
+```
+
+# Parameter Extraction
+
+```{r}
+# Create a data frame template to keep ideal parameters inclusive of intervals
+df_ideal_9iron <- data.frame(
+  Club = character(),
+  Height_Class = character(),
+  Side_Class = character(),
+  Sex = character(),
+  Club_Path_Angle = double(),
+  Lie_Angle = double(),
+  Attack_Angle = double(),
+  Club_Speed = double(),
+  Shaft_Lean = double(),
+  Face_Angle = double(),
+  Data_Points = numeric(),
+  CPA_LB = double(),
+  CPA_UB = double(),
+  LA_LB = double(),
+  LA_UB = double(),
+  AA_LB = double(),
+  AA_UB = double(),
+  CS_LB = double(),
+  CS_UB = double(),
+  SL_LB = double(),
+  SL_UB = double(),
+  FA_LB = double(),
+  FA_UB = double()
+)
+
+# Lists for shot shapes
+heights <- c("High", "Medium", "Low")
+sides <- c("Draw", "Straight", "Fade")
+
+# Variable for row iterator
+row <- 1
+
+# Loop though each shot shape combination
+for (height in heights) {
+  for (side in sides) {
+    # Filter to only specific shot shape
+    shot_shape_df <- filter(df_9iron_lim, side_class_acc == side & height_class_acc == height)
+
+    # Store club and shot shape
+    df_ideal_9iron[row, "Club"] <- "9 Iron"
+    df_ideal_9iron[row, "Height_Class"] <- height
+    df_ideal_9iron[row, "Side_Class"] <- side
+    df_ideal_9iron[row, "Sex"] <- "Male"
+
+    # Get ideal parameters from medians
+    df_ideal_9iron[row, "Club_Path_Angle"] <- median(shot_shape_df$`Club Path`)
+    df_ideal_9iron[row, "Lie_Angle"] <- median(shot_shape_df$`Swing Plane`)
+    df_ideal_9iron[row, "Attack_Angle"] <- mean(shot_shape_df$`Attack Angle`)
+    df_ideal_9iron[row, "Club_Speed"] <- mean(shot_shape_df$`Club Speed`)
+    df_ideal_9iron[row, "Shaft_Lean"] <- mean(shot_shape_df$shaft_lean)
+    df_ideal_9iron[row, "Face_Angle"] <- mean(shot_shape_df$`Face Angle`)
+    df_ideal_9iron[row, "Data_Points"] <- nrow(shot_shape_df)
+
+    # Inital standard deviations are zero
+    sd_cpa <- 0
+    sd_la <- 0
+    sd_aa <- 0
+    sd_cs <- 0
+    sd_sl <- 0
+    sd_fa <- 0
+
+    # Check to make sure there is enough data for a bound
+    if (nrow(shot_shape_df) > 1) {
+      # Find standard deviation of each CHP
+      sd_cpa <- sd(shot_shape_df$`Club Path`)
+      sd_la <- sd(shot_shape_df$`Swing Plane`)
+      sd_aa <- sd(shot_shape_df$`Attack Angle`)
+      sd_cs <- sd(shot_shape_df$`Club Speed`)
+      sd_sl <- sd(shot_shape_df$shaft_lean)
+      sd_fa <- sd(shot_shape_df$`Face Angle`)
+    }
+
+    # Find lower bound for each parameter by subtracting a fraction of sd
+    df_ideal_9iron[row, "CPA_LB"] <- median(shot_shape_df$`Club Path`) - (sd_cpa / 16)
+    df_ideal_9iron[row, "LA_LB"] <- median(shot_shape_df$`Swing Plane`) - (sd_la / 16)
+    df_ideal_9iron[row, "AA_LB"] <- mean(shot_shape_df$`Attack Angle`) - (sd_aa / 16)
+    df_ideal_9iron[row, "CS_LB"] <- mean(shot_shape_df$`Club Speed`) - (sd_cs / 16)
+    df_ideal_9iron[row, "SL_LB"] <- mean(shot_shape_df$shaft_lean) - (sd_sl / 16)
+    df_ideal_9iron[row, "FA_LB"] <- mean(shot_shape_df$`Face Angle`) - (sd_fa / 16)
+
+    # Find upper bound for each parameter by adding a fraction of sd
+    df_ideal_9iron[row, "CPA_UB"] <- median(shot_shape_df$`Club Path`) + (sd_cpa / 16)
+    df_ideal_9iron[row, "LA_UB"] <- median(shot_shape_df$`Swing Plane`) + (sd_la / 16)
+    df_ideal_9iron[row, "AA_UB"] <- mean(shot_shape_df$`Attack Angle`) + (sd_aa / 16)
+    df_ideal_9iron[row, "CS_UB"] <- mean(shot_shape_df$`Club Speed`) + (sd_cs / 16)
+    df_ideal_9iron[row, "SL_UB"] <- mean(shot_shape_df$shaft_lean) + (sd_sl / 16)
+    df_ideal_9iron[row, "FA_UB"] <- mean(shot_shape_df$`Face Angle`) + (sd_fa / 16)
+
+
+    # Iterate to next row
+    row <- row + 1
+  }
+}
+```
+
+# Build and Visualize Fluid Quadrant
+
+```{r}
+# Create dummy data frame that matches with visualization
+df_ideal_9iron_mutated <- df_ideal_9iron
+colnames(df_ideal_9iron_mutated) <- c(
+  "Club", "Height_Class", "Side_Class", "Sex",
+  "Club Path", "Swing Plane", "Attack Angle",
+  "Club Speed", "shaft_lean", "Face Angle"
+)
+
+# Get predictions from moedls
+side_preds <- predict(iron_side_final, df_ideal_9iron_mutated)
+height_preds <- predict(iron_height_final, df_ideal_9iron_mutated)
+
+# Data frame with predicted spot in air
+predictions_quad <- data.frame(side_preds, height_preds)
+
+# Get side means for each shot shape
+side_mean <- c(
+  mean(filter(df_9iron_lim, side_class_acc == "Draw" & height_class_acc == "High")$`Max Height - Side`),
+  mean(filter(df_9iron_lim, side_class_acc == "Straight" & height_class_acc == "High")$`Max Height - Side`),
+  mean(filter(df_9iron_lim, side_class_acc == "Fade" & height_class_acc == "High")$`Max Height - Side`),
+  mean(filter(df_9iron_lim, side_class_acc == "Draw" & height_class_acc == "Medium")$`Max Height - Side`),
+  mean(filter(df_9iron_lim, side_class_acc == "Straight" & height_class_acc == "Medium")$`Max Height - Side`),
+  mean(filter(df_9iron_lim, side_class_acc == "Fade" & height_class_acc == "Medium")$`Max Height - Side`),
+  mean(filter(df_9iron_lim, side_class_acc == "Draw" & height_class_acc == "Low")$`Max Height - Side`),
+  mean(filter(df_9iron_lim, side_class_acc == "Straight" & height_class_acc == "Low")$`Max Height - Side`),
+  mean(filter(df_9iron_lim, side_class_acc == "Fade" & height_class_acc == "Low")$`Max Height - Side`)
+)
+
+# Get height means for each shot shape
+height_mean <- c(
+  mean(filter(df_9iron_lim, side_class_acc == "Draw" & height_class_acc == "High")$`Max Height - Height`),
+  mean(filter(df_9iron_lim, side_class_acc == "Straight" & height_class_acc == "High")$`Max Height - Height`),
+  mean(filter(df_9iron_lim, side_class_acc == "Fade" & height_class_acc == "High")$`Max Height - Height`),
+  mean(filter(df_9iron_lim, side_class_acc == "Draw" & height_class_acc == "Medium")$`Max Height - Height`),
+  mean(filter(df_9iron_lim, side_class_acc == "Straight" & height_class_acc == "Medium")$`Max Height - Height`),
+  mean(filter(df_9iron_lim, side_class_acc == "Fade" & height_class_acc == "Medium")$`Max Height - Height`),
+  mean(filter(df_9iron_lim, side_class_acc == "Draw" & height_class_acc == "Low")$`Max Height - Height`),
+  mean(filter(df_9iron_lim, side_class_acc == "Straight" & height_class_acc == "Low")$`Max Height - Height`),
+  mean(filter(df_9iron_lim, side_class_acc == "Fade" & height_class_acc == "Low")$`Max Height - Height`)
+)
+
+shot_shape <- c(
+  "High Draw", "High Straight", "High Fade",
+  "Medium Draw", "Medium Straight", "Medium Fade",
+  "Low Draw", "Low Straight", "Low Fade"
+)
+
+# Put means in dataframe
+means_quad <- data.frame(side_mean, height_mean)
+
+par(mfrow = c(2, 2))
+# Visualize q1 quadrants
+ggplot(df_9iron_lim_height1, aes(x = `Max Height - Side`, y = `Max Height - Height`)) +
+  ylim(50, 140) +
+  xlim(-15, 15) +
+  geom_point(alpha = 0.5) +
+  geom_vline(aes(xintercept = -sd_lim_side1 / sd_divisor_side_1), col = "green") +
+  geom_vline(aes(xintercept = sd_lim_side1 / sd_divisor_side_1), col = "green") +
+  geom_hline(aes(yintercept = (mean_lim_height1 + sd_lim_height1 / sd_divisor_height_1)), col = "green") +
+  geom_hline(aes(yintercept = (mean_lim_height1 - sd_lim_height1 / sd_divisor_height_1)), col = "green") +
+  theme(
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+    panel.background = element_blank(), axis.line = element_line(colour = "black")
+  ) +
+  labs(
+    title = "Distribution of Shots at Max Height for a 9 Iron - Males",
+    subtitle = "(Only for shots that fall within the first quartile of distance traveled)",
+    y = "Height (ft)",
+    x = "Side Distance (ft)"
+  )
+
+# Visualize q2 quadrants
+ggplot(df_9iron_lim_height2, aes(x = `Max Height - Side`, y = `Max Height - Height`)) +
+  ylim(50, 140) +
+  xlim(-15, 15) +
+  geom_point(alpha = 0.5) +
+  geom_vline(aes(xintercept = -sd_lim_side2 / sd_divisor_side_2), col = "yellow") +
+  geom_vline(aes(xintercept = sd_lim_side2 / sd_divisor_side_2), col = "yellow") +
+  geom_hline(aes(yintercept = (mean_lim_height2 + sd_lim_height2 / sd_divisor_height_2)), col = "yellow") +
+  geom_hline(aes(yintercept = (mean_lim_height2 - sd_lim_height2 / sd_divisor_height_2)), col = "yellow") +
+  theme(
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+    panel.background = element_blank(), axis.line = element_line(colour = "black")
+  ) +
+  labs(
+    title = "Distribution of Shots at Max Height for a 9 Iron - Males",
+    subtitle = "(Only for shots that fall within the first second of distance traveled)",
+    y = "Height (ft)",
+    x = "Side Distance (ft)"
+  )
+
+# Visualize q2 quadrants
+ggplot(df_9iron_lim_height3, aes(x = `Max Height - Side`, y = `Max Height - Height`)) +
+  ylim(50, 140) +
+  xlim(-15, 15) +
+  geom_point(alpha = 0.5) +
+  geom_vline(aes(xintercept = -sd_lim_side3 / sd_divisor_side_3), col = "orange") +
+  geom_vline(aes(xintercept = sd_lim_side3 / sd_divisor_side_3), col = "orange") +
+  geom_hline(aes(yintercept = (mean_lim_height3 + sd_lim_height3 / sd_divisor_height_3)), col = "orange") +
+  geom_hline(aes(yintercept = (mean_lim_height3 - sd_lim_height3 / sd_divisor_height_3)), col = "orange") +
+  theme(
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+    panel.background = element_blank(), axis.line = element_line(colour = "black")
+  ) +
+  labs(
+    title = "Distribution of Shots at Max Height for a 9 Iron - Males",
+    subtitle = "(Only for shots that fall within the third quartile of distance traveled)",
+    y = "Height (ft)",
+    x = "Side Distance (ft)"
+  )
+
+
+# Visualize q4 quadrants
+ggplot(df_9iron_lim_height4, aes(x = `Max Height - Side`, y = `Max Height - Height`)) +
+  ylim(50, 140) +
+  xlim(-15, 15) +
+  geom_point(alpha = 0.5) +
+  geom_vline(aes(xintercept = -sd_lim_side4 / sd_divisor_side_4), col = "red") +
+  geom_vline(aes(xintercept = sd_lim_side4 / sd_divisor_side_4), col = "red") +
+  geom_hline(aes(yintercept = (mean_lim_height4 + sd_lim_height4 / sd_divisor_height_4)), col = "red") +
+  geom_hline(aes(yintercept = (mean_lim_height4 - sd_lim_height4 / sd_divisor_height_4)), col = "red") +
+  theme(
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+    panel.background = element_blank(), axis.line = element_line(colour = "black")
+  ) +
+  labs(
+    title = "Distribution of Shots at Max Height for a 9 Iron - Males",
+    subtitle = "(Only for shots that fall within the fourth quartile of distance traveled)",
+    y = "Height (ft)",
+    x = "Side Distance (ft)"
+  )
+
+# Visualize all quadrants with the parameters landing via model
+ggplot(df_9iron_lim, aes(x = `Max Height - Side`, y = `Max Height - Height`)) +
+  geom_point(alpha = 0.2) +
+  geom_vline(aes(xintercept = -sd_lim_side1 / sd_divisor_side_1), col = "green") +
+  geom_vline(aes(xintercept = sd_lim_side1 / sd_divisor_side_1), col = "green") +
+  geom_vline(aes(xintercept = -sd_lim_side2 / sd_divisor_side_2), col = "yellow") +
+  geom_vline(aes(xintercept = sd_lim_side2 / sd_divisor_side_2), col = "yellow") +
+  geom_vline(aes(xintercept = -sd_lim_side3 / sd_divisor_side_3), col = "orange") +
+  geom_vline(aes(xintercept = sd_lim_side3 / sd_divisor_side_3), col = "orange") +
+  geom_vline(aes(xintercept = -sd_lim_side4 / sd_divisor_side_4), col = "red") +
+  geom_vline(aes(xintercept = sd_lim_side4 / sd_divisor_side_4), col = "red") +
+  geom_hline(aes(yintercept = (mean_lim_height1 + sd_lim_height1 / sd_divisor_height_1)), col = "green") +
+  geom_hline(aes(yintercept = (mean_lim_height1 - sd_lim_height1 / sd_divisor_height_1)), col = "green") +
+  geom_hline(aes(yintercept = (mean_lim_height2 + sd_lim_height2 / sd_divisor_height_2)), col = "yellow") +
+  geom_hline(aes(yintercept = (mean_lim_height2 - sd_lim_height2 / sd_divisor_height_2)), col = "yellow") +
+  geom_hline(aes(yintercept = (mean_lim_height3 + sd_lim_height3 / sd_divisor_height_3)), col = "orange") +
+  geom_hline(aes(yintercept = (mean_lim_height3 - sd_lim_height3 / sd_divisor_height_3)), col = "orange") +
+  geom_hline(aes(yintercept = (mean_lim_height4 + sd_lim_height4 / sd_divisor_height_4)), col = "red") +
+  geom_hline(aes(yintercept = (mean_lim_height4 - sd_lim_height4 / sd_divisor_height_4)), col = "red") +
+  labs(
+    title = "Distribution of Shots at Max Height for a 9 Iron - Males",
+    subtitle = "Shot shape quadrants dependent on the distance a ball travels",
+    y = "Height (ft)",
+    x = "Side Distance (ft)"
+  ) +
+  geom_text(x = -14, y = 135, label = "Fade") +
+  geom_text(x = 0, y = 135, label = "Straight") +
+  geom_text(x = 14, y = 135, label = "Draw") +
+  theme(
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+    panel.background = element_blank(), axis.line = element_line(colour = "black")
+  ) +
+  geom_point(data = means_quad, aes(x = side_mean, y = height_mean), color = "violet", pch = 20, size = 10) +
+  geom_point(data = predictions_quad, aes(x = side_preds, y = height_preds), color = "blue", pch = 10, size = 8)
+```
+
+# Chart the Parameters
+
+```{r}
+# Dummy df for sharing table
+df_ideal_9iron_male_sharable <- data.frame(
+  Club = df_ideal_9iron$Club,
+  Shot_Shape = paste(df_ideal_9iron$Height_Class, df_ideal_9iron$Side_Class),
+  Sex = df_ideal_9iron$Sex,
+  Club_Path_Angle = df_ideal_9iron$Club_Path_Angle,
+  CPA_LB = df_ideal_9iron$CPA_LB,
+  CPA_UB = df_ideal_9iron$CPA_UB,
+  Lie_Angle = df_ideal_9iron$Lie_Angle,
+  LA_LB = df_ideal_9iron$LA_LB,
+  LA_UB = df_ideal_9iron$LA_UB,
+  Attack_Angle = df_ideal_9iron$Attack_Angle,
+  AA_LB = df_ideal_9iron$AA_LB,
+  AA_UB = df_ideal_9iron$AA_UB,
+  Club_Speed = df_ideal_9iron$Club_Speed,
+  CS_LB = df_ideal_9iron$CS_LB,
+  CS_UB = df_ideal_9iron$CS_UB,
+  Shaft_Lean = df_ideal_9iron$Shaft_Lean,
+  SL_LB = df_ideal_9iron$SL_LB,
+  SL_UB = df_ideal_9iron$SL_UB,
+  Face_Angle = df_ideal_9iron$Face_Angle,
+  FA_LB = df_ideal_9iron$FA_LB,
+  FA_UB = df_ideal_9iron$FA_UB,
+  Data_Points = df_ideal_9iron$Data_Points
+)
+
+# Output kable
+kable(df_ideal_9iron_male_sharable, escape = TRUE, caption = "Ideal Parameter Estimates for 9 Iron From Centers of Actual Data (Males)") %>%
+  kable_styling(latex_options = "hold_position")
+```

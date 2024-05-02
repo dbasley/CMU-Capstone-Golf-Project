@@ -1,0 +1,52 @@
+---
+title: "Extracted Clubhead Parameters Data Dicionary"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Club:** String denoting the type of club.
+
+**Shot_Shape:** String denoting the classification of shot shape.
+
+**Sex:** String denoting the sex of the player.
+
+**Club_Path_Angle:** Double denoting the ideal Club Path Angle estimate (in degrees).
+
+**CPA_LB:** Double denoting the lower bound of a confidence interval for the Club Path Angle estimate (in degrees).
+
+**CPA_UB:** Double denoting the upper bound of a confidence interval for the Club Path Angle estimate (in degrees).
+
+**Lie_Angle:** Double denoting the ideal Lie Angle estimate (in degrees).
+
+**LA_LB:** Double denoting the lower bound of a confidence interval for the Lie Angle estimate (in degrees).
+
+**LA_UB:** Double denoting the upper bound of a confidence interval for the Lie Angle estimate (in degrees).
+
+**Attack_Angle:** Double denoting the ideal Angle of Attack estimate (in degrees).
+
+**AA_LB:** Double denoting the lower bound of a confidence interval for the Angle of Attack estimate (in degrees).
+
+**AA_UB:** Double denoting the upper bound of a confidence interval for the Angle of Attack estimate (in degrees).
+
+**Club_Speed:** Double denoting the ideal Clubhead Speed estimate (in MPH).
+
+**CS_LB:** Double denoting the lower bound of a confidence interval for the Clubhead Speed estimate (in MPH).
+
+**CS_UB:** Double denoting the upper bound of a confidence interval for the Clubhead Speed estimate (in MPH).
+
+**Shaft_Lean:** Double denoting the ideal Shaft Lean estimate (in degrees).
+
+**SL_LB:** Double denoting the lower bound of a confidence interval for the Shaft Lean estimate (in degrees).
+
+**SL_UB:** Double denoting the upper bound of a confidence interval for the Shaft Lean estimate (in degrees).
+
+**Face_Angle:** Double denoting the ideal Face Angle estimate (in degrees).
+
+**FA_LB:** Double denoting the lower bound of a confidence interval for the Face Angle estimate (in degrees).
+
+**FA_UB:** Double denoting the upper bound of a confidence interval for the Face Angle estimate (in degrees).
+
+**Data_Points:** Integer denoting the number data points used estimate parameters for a given row. A row with more data points is likely to be more confident in its estimates.

@@ -1,0 +1,671 @@
+---
+title: "Club Classification Models"
+author: "Devin Basley"
+date: "2024-03-28"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(caret)
+library(xgboost)
+library(purrr)
+library(randomForest)
+```
+
+
+
+# Load Data
+
+```{r}
+
+# Load in Trackman Golf Data
+tman_data <- read.csv("~/Downloads/SquareFace/2024-cmu/Data Cleaning/Output Data/Cleaned_All_Clubs.csv")
+
+
+
+tman_data <- tman_data %>%
+  mutate(player_id = case_when(Player == "Alexis Sudjianto" ~ 1,
+                               Player == "Daniel Rodgers" ~ 2,
+                               Player == "Jay Saluja" ~ 3,
+                               Player == "Ryan Dannegger" ~ 4,
+                               Player == "Stephen Dai" ~ 5,
+                               Player == "Andrew" ~ 6,
+                               Player == "David Zhang" ~ 7,
+                               Player == "Justin Chan" ~ 8,
+                               Player == "Samantha Wang" ~ 9,
+                               Player == "Steven Shea" ~ 10,
+                               Player == "Ashley Liu" ~ 11,
+                               Player == "Folker" ~ 12,
+                               Player == "Justin Luan" ~ 13,
+                               Player == "Sense sangkagoon" ~ 14,
+                               Player == "Bli" ~ 15,
+                               Player == "Hank" ~ 16,
+                               Player == "Kaylin Yeoh" ~ 17,
+                               Player == "Simulator Player" ~ 18,
+                               Player == "Brian Xu" ~ 19,
+                               Player == "Jack Sonne" ~ 20,
+                               Player == "Nikita Jadhav" ~ 21,
+                               Player == "Sriya" ~ 22))
+
+unknown_clubs_df <- tman_data %>%
+  filter(Club == "Unknown Club")
+
+
+unknown_clubs <- unknown_clubs_df %>%
+  select(c(Max.Height...Dist., Max.Height...Height, Ball.Speed, Club.Speed, 
+           Attack.Angle, Dynamic.Lie, Dyn..Loft, player_id, Swing.Plane, Club))
+
+  
+
+
+
+st_club <- c("4 Iron", "5 Iron", "6 Iron", "7 Iron", "8 Iron", "9 Iron",
+             "Pitching Wedge", "Driver")
+
+tman_data <- tman_data %>%
+  filter(Club %in% st_club) %>%
+  mutate(club_id = case_when(Club == "Driver" ~ 0,
+                               Club == "Pitching Wedge" ~ 1,
+                               Club == "4 Iron" ~ 2,
+                               Club == "5 Iron" ~ 3,
+                               Club == "6 Iron" ~ 4,
+                               Club == "7 Iron" ~ 5,
+                               Club == "8 Iron" ~ 6,
+                               Club == "9 Iron" ~ 7))
+
+tman_data <- tman_data %>%
+  select(c(club_id, Max.Height...Dist., Max.Height...Height, Ball.Speed, Club.Speed, 
+           Attack.Angle, Dynamic.Lie, Dyn..Loft, player_id, Swing.Plane))
+
+
+
+```
+
+# xgBoost Model CV
+
+```{r}
+
+trainSize <- round(0.80 * nrow(tman_data))
+
+set.seed(1234) 
+trainIndex <- sample(nrow(tman_data), trainSize)
+trainDF <- tman_data %>% dplyr::slice(trainIndex)
+testDF <- tman_data %>% dplyr::slice(-trainIndex)
+dtrain <- xgb.DMatrix(data = as.matrix(select(trainDF, -club_id)), label = trainDF$club_id)
+dtest <- xgb.DMatrix(data = as.matrix(select(testDF, -club_id)), label = testDF$club_id)
+
+
+
+set.seed(524)
+club_CV <- xgb.cv(params = list(eta = 0.3),
+               data = dtrain, 
+               num_class = length(unique(trainDF$club_id)),
+               booster = "gbtree",  
+               objective = "multi:softmax", 
+               nfold = 10,
+               nrounds = 500,
+               early_stopping_rounds = 10,
+               print_every_n = 5)
+
+
+
+
+```
+
+
+
+# Assess xgBoost Performance
+
+```{r}
+# Determine the optimal number of boosting rounds
+optimal_round <- club_CV$best_iteration
+
+
+
+# Print optimal number of boosting rounds
+cat("Optimal Number of Boosting Rounds:", optimal_round, "\n")
+
+# Assess model performance
+best_model <- xgb.train(params = list(eta = 0.3),
+                        data = dtrain,
+                        num_class = length(unique(trainDF$club_id)),
+                        booster = "gbtree",
+                        objective = "multi:softmax",
+                        nrounds = optimal_round)
+
+# Make predictions on the test set
+pred <- predict(best_model, dtest)
+
+# Evaluate predictions
+accuracy <- mean(pred == testDF$club_id)
+cat("Accuracy on Test Set:", accuracy, "\n")
+
+
+```
+
+
+
+# Random Forest Model Cross Validation
+
+```{r}
+
+trainSize <- round(0.80 * nrow(tman_data))
+
+set.seed(1234) 
+trainIndex <- sample(nrow(tman_data), trainSize)
+trainDF <- tman_data %>% dplyr::slice(trainIndex)
+testDF <- tman_data %>% dplyr::slice(-trainIndex)
+
+
+
+
+ # rf_model <- randomForest(as.factor(club_id) ~ `Max.Height...Dist.` + `Max.Height...Height` + 
+ #                            Ball.Speed + Club.Speed + Attack.Angle +
+ #                            Dynamic.Lie + Dyn..Loft + player_id , 
+ #                          data = trainDF, ntree = 500)
+
+ #varImp(rf_model)
+
+set.seed(123)
+# Define training control
+ctrl <- trainControl(method = "cv",    # Cross-validation method
+                     number = 10)       # Number of folds
+
+set.seed(123)
+# Train the model using cross-validation
+rf_model_cv <- train(as.factor(club_id) ~ `Max.Height...Dist.` + `Max.Height...Height` + 
+                       Ball.Speed + Club.Speed + Attack.Angle +
+                       Dynamic.Lie + Dyn..Loft + player_id , 
+                     data = trainDF, 
+                     method = "rf",           # Random forest method
+                     trControl = ctrl,        # Use defined training control
+                     ntree = 500)
+
+# Print cross-validation results
+#print(rf_model_cv)
+
+
+rf_preds <- predict(rf_model_cv, newdata = testDF)
+
+
+
+# Evaluate predictions
+rf_accuracy <- mean(rf_preds == testDF$club_id)
+cat("Random Forest Accuracy on Test Set:", rf_accuracy, "\n")
+
+```
+
+# Predict on Unknown Club
+
+```{r}
+
+unknown_preds <- predict(rf_model_cv, newdata = unknown_clubs)
+
+table(unknown_preds)
+
+unknown_clubs_df$pred_club_id <- unknown_preds
+
+```
+
+
+# Unknown Club Data Cleaning
+
+```{r}
+
+unknown_clubs_df <- unknown_clubs_df %>% 
+  mutate(Club = case_when(pred_club_id == 0 ~ "Driver",
+                          pred_club_id == 1 ~ "Pitching Wedge",
+                          pred_club_id == 2 ~ "4 Iron",
+                          pred_club_id == 3 ~ "5 Iron",
+                          pred_club_id == 4 ~ "6 Iron",
+                          pred_club_id == 5 ~ "7 Iron",
+                          pred_club_id == 6 ~ "8 Iron",
+                          pred_club_id == 7 ~ "9 Iron"))
+
+# The next few lines limit the data via our "good shot" criteria
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "Driver" & `Est..Total.Flat...Side` > 15))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "Driver" & `Est..Total.Flat...Side` < -15))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "9 Iron" & `Est..Total.Flat...Side` > 5))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "9 Iron" & `Est..Total.Flat...Side` < -5))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "8 Iron" & `Est..Total.Flat...Side` > 5))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "8 Iron" & `Est..Total.Flat...Side` < -5))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "7 Iron" & `Est..Total.Flat...Side` > 7.5))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "7 Iron" & `Est..Total.Flat...Side` < -7.5))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "6 Iron" & `Est..Total.Flat...Side` > 7.5))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "6 Iron" & `Est..Total.Flat...Side` < -7.5))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "5 Iron" & `Est..Total.Flat...Side` > 10))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "5 Iron" & `Est..Total.Flat...Side` < -10))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "4 Iron" & `Est..Total.Flat...Side` > 10))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "4 Iron" & `Est..Total.Flat...Side` < -10))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "Pitching Wedge" & `Est..Total.Flat...Side` > 5))
+
+unknown_clubs_df <- unknown_clubs_df %>%
+  filter(!(Club == "Pitching Wedge" & `Est..Total.Flat...Side` < -5))
+
+# Filter out shots that do not go far
+unknown_clubs_df <- filter(unknown_clubs_df, !(
+    Club == "Driver" & `Est..Total.Flat...Length` < quantile(
+        filter(
+            unknown_clubs_df, Club == "Driver"
+        )$`Est..Total.Flat...Length`, 0.15
+    )
+))
+
+unknown_clubs_df <- filter(unknown_clubs_df, !(
+    Club == "9 Iron" & `Est..Total.Flat...Length` < quantile(
+        filter(
+            unknown_clubs_df, Club == "9 Iron"
+        )$`Est..Total.Flat...Length`, 0.10
+    )
+))
+
+unknown_clubs_df <- filter(unknown_clubs_df, !(
+    Club == "8 Iron" &`Est..Total.Flat...Length` < quantile(
+        filter(
+            unknown_clubs_df, Club == "8 Iron"
+        )$`Est..Total.Flat...Length`, 0.10
+    )
+))
+
+unknown_clubs_df <- filter(unknown_clubs_df, !(
+    Club == "7 Iron" & `Est..Total.Flat...Length` < quantile(
+        filter(
+            unknown_clubs_df, Club == "7 Iron"
+        )$`Est..Total.Flat...Length`, 0.10
+    )
+))
+
+unknown_clubs_df <- filter(unknown_clubs_df, !(
+    Club == "6 Iron" & `Est..Total.Flat...Length` < quantile(
+        filter(
+            unknown_clubs_df, Club == "6 Iron"
+        )$`Est..Total.Flat...Length`, 0.10
+    )
+))
+
+unknown_clubs_df <- filter(unknown_clubs_df, !(
+    Club == "5 Iron" & `Est..Total.Flat...Length` < quantile(
+        filter(
+            unknown_clubs_df, Club == "5 Iron"
+        )$`Est..Total.Flat...Length`, 0.10
+    )
+))
+
+unknown_clubs_df <- filter(unknown_clubs_df, !(
+    Club == "4 Iron" & `Est..Total.Flat...Length` < quantile(
+        filter(
+            unknown_clubs_df, Club == "4 Iron"
+        )$`Est..Total.Flat...Length`, 0.10
+    )
+))
+
+unknown_clubs_df <- filter(unknown_clubs_df, !(
+    Club == "Pitching Wedge" & `Est..Total.Flat...Length` < quantile(
+        filter(
+            unknown_clubs_df, Club == "Pitching Wedge"
+        )$`Est..Total.Flat...Length`, 0.10
+    )
+))
+
+#write_csv(df_st_club, "Output Data/Cleaned_Standard_Clubs.csv")
+
+
+
+
+
+
+
+
+# Calculate shaft_lean for known clubs
+unknown_clubs_df <- unknown_clubs_df %>%
+  mutate(shaft_lean = ifelse(Club == "Driver", 10.5 - `Dyn..Loft`,
+    ifelse(Club == "4 Iron", 22 - `Dyn..Loft`,
+      ifelse(Club == "5 Iron", 25 - `Dyn..Loft`,
+        ifelse(Club == "6 Iron", 29 - `Dyn..Loft`,
+          ifelse(Club == "7 Iron", 33 - `Dyn..Loft`,
+            ifelse(Club == "8 Iron", 37 - `Dyn..Loft`,
+              ifelse(Club == "9 Iron", 41 - `Dyn..Loft`,
+                ifelse(Club == "Pitching Wedge", 45 - `Dyn..Loft`,
+                  NA
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  ))
+
+
+```
+
+
+# Unknown Club - Driver Side GAM
+
+```{r}
+
+library(mgcv)
+
+pred_driver_df <- unknown_clubs_df %>%
+  filter(Club == "Driver")
+
+attach(pred_driver_df)
+
+pred_driver_side <- gam(`Max.Height...Side` ~ s(Club.Speed) + s(Attack.Angle) +
+                           s(Swing.Plane) + s(Face.Angle) + s(Club.Path) +
+                           s(shaft_lean), 
+                         data = pred_driver_df)
+
+summary(pred_driver_side)
+print(pred_driver_side)
+
+
+
+
+```
+
+
+# Unknown Club - Driver Height GAM
+
+```{r}
+pred_driver_height <- gam(`Max.Height...Height` ~ s(Club.Speed) + s(Attack.Angle) +
+                           s(Swing.Plane) + s(Face.Angle) + s(Club.Path) +
+                           s(shaft_lean), 
+                         data = pred_driver_df)
+summary(pred_driver_height)
+print(pred_driver_height)
+
+
+```
+
+# Split Predicted Driver Data into Quartiles
+
+```{r}
+
+# SPLIT THE DATA INTO QUARTERS
+# First distance quartile
+q1_dist <- quantile(pred_driver_df$`Est..Total.Flat...Length`, 0.25)
+# Second Distance quartile
+median_dist <- quantile(pred_driver_df$`Est..Total.Flat...Length`, 0.50)
+# Third Distance quartile
+q3_dist <- quantile(pred_driver_df$`Est..Total.Flat...Length`, 0.75)
+
+# 0-25% of data range to classify a straight
+straight_range1 <- 8 / 2 # Distance from zero (target)
+# 25-50% of data range to classify a straight
+straight_range2 <- 10 / 2 # Distance from zero (target)
+# 50-75% of data range to classify a straight
+straight_range3 <- 12 / 2 # Distance from zero (target)
+# 75-100% of data range to classify a straight
+straight_range4 <- 14 / 2 # Distance from zero (target)
+
+# 0-25% of data, divide height standard deviation by this
+sd_divisor1 <- 2
+# 25-50% of data, divide height standard deviation by this
+sd_divisor2 <- 2
+# 0-25% of data, divide height standard deviation by this
+sd_divisor3 <- 3
+# 25-100% of data, divide height standard deviation by this
+sd_divisor4 <- 3
+
+```
+
+
+# Predicted Driver Side Refitting
+
+```{r}
+
+# Get side predictions from model and stor them in a column
+pred_driver_df$prediction_side <- predict(pred_driver_side, pred_driver_df)
+
+# Initially split for drivers and fades based on sign
+pred_driver_df$side_class <- ifelse(pred_driver_df$prediction_side > 0, "Draw", "Fade")
+
+# Loop to classify striaghts
+for (i in 1:nrow(pred_driver_df)) {
+  # See if point is in the first quartile of shot distances
+  if (pred_driver_df[i, "Est..Total.Flat...Length"] < q1_dist) {
+    # See if the shot meets straight criteria for q1 distance
+    if (pred_driver_df[i, "prediction_side"] < straight_range1 &
+      pred_driver_df[i, "prediction_side"] > -straight_range1) {
+      # Classify the point as a straight
+      pred_driver_df[i, "side_class"] <- "Straight"
+    }
+    # See if point is in the second quartile of shot distances
+  } else if (pred_driver_df[i, "Est..Total.Flat...Length"] < median_dist) {
+    # See if the shot meets straight criteria for q2 distance
+    if (pred_driver_df[i, "prediction_side"] < straight_range2 &
+      pred_driver_df[i, "prediction_side"] > -straight_range2) {
+      # Classify the point as a straight
+      pred_driver_df[i, "side_class"] <- "Straight"
+    }
+    # See if point is in the third quartile of shot distances
+  } else if (pred_driver_df[i, "Est..Total.Flat...Length"] < q3_dist) {
+    # See if the shot meets straight criteria for q3 distance
+    if (pred_driver_df[i, "prediction_side"] < straight_range3 &
+      pred_driver_df[i, "prediction_side"] > -straight_range3) {
+      # Classify the point as a straight
+      pred_driver_df[i, "side_class"] <- "Straight"
+    }
+    # See if point is in the fourth quartile of shot distances
+  } else {
+    # See if the shot meets straight criteria for q4 distance
+    if (pred_driver_df[i, "prediction_side"] < straight_range4 &
+      pred_driver_df[i, "prediction_side"] > -straight_range4) {
+      # Classify the point as a straight
+      pred_driver_df[i, "side_class"] <- "Straight"
+    }
+  }
+}
+
+
+```
+
+
+# Predicted Driver Height Refit
+
+```{r}
+
+# Get height predictions from model
+pred_driver_df$prediction_height <- predict(pred_driver_height, pred_driver_df)
+# Define height class variable with all initially Medium
+pred_driver_df$height_class <- "Medium"
+
+# Limit data to first quartile
+pred_driver_df_height1 <- filter(pred_driver_df, `Est..Total.Flat...Length` < q1_dist)
+# Get mean and standard deviation
+mean_lim_height1 <- mean(pred_driver_df_height1$prediction_height)
+sd_lim_height1 <- sd(pred_driver_df_height1$prediction_height)
+
+# Limit data to second quartile
+pred_driver_df_height2 <- filter(pred_driver_df, `Est..Total.Flat...Length` >= q1_dist)
+pred_driver_df_height2 <- filter(pred_driver_df_height2, `Est..Total.Flat...Length` < median_dist)
+# Get mean and standard deviation
+mean_lim_height2 <- mean(pred_driver_df_height2$prediction_height)
+sd_lim_height2 <- sd(pred_driver_df_height2$prediction_height)
+
+# Limit data to third quartile
+pred_driver_df_height3 <- filter(pred_driver_df, `Est..Total.Flat...Length` >= median_dist)
+pred_driver_df_height3 <- filter(pred_driver_df_height3, `Est..Total.Flat...Length` < q3_dist)
+mean_lim_height3 <- mean(pred_driver_df_height3$prediction_height)
+sd_lim_height3 <- sd(pred_driver_df_height3$prediction_height)
+
+# Limit data to fourth quartile
+pred_driver_df_height4 <- filter(pred_driver_df, `Est..Total.Flat...Length` >= q3_dist)
+# Get mean and standard deviation
+mean_lim_height4 <- mean(pred_driver_df_height4$prediction_height)
+sd_lim_height4 <- sd(pred_driver_df_height4$prediction_height)
+
+# For loop to classify varying heights
+for (i in 1:nrow(pred_driver_df)) {
+  # Check to see if distance is in first quartile
+  if (pred_driver_df[i, "Est..Total.Flat...Length"] < q1_dist) {
+    # Check to see if shot is high
+    if (pred_driver_df[i, "prediction_height"] > (mean_lim_height1 + sd_lim_height1 / sd_divisor1)) {
+      pred_driver_df[i, "height_class"] <- "High"
+    }
+    # Check to see if shot is low
+    if (pred_driver_df[i, "prediction_height"] < (mean_lim_height1 - sd_lim_height1 / sd_divisor1)) {
+      pred_driver_df[i, "height_class"] <- "Low"
+    }
+    # Check to see if distance is in second quartile
+  } else if (pred_driver_df[i, "Est..Total.Flat...Length"] < median_dist) {
+    # Check to see if shot is high
+    if (pred_driver_df[i, "prediction_height"] > (mean_lim_height2 + sd_lim_height2 / sd_divisor2)) {
+      pred_driver_df[i, "height_class"] <- "High"
+    }
+    # Check to see if shot is low
+    if (pred_driver_df[i, "prediction_height"] < (mean_lim_height2 - sd_lim_height2 / sd_divisor2)) {
+      pred_driver_df[i, "height_class"] <- "Low"
+    }
+    # Check to see if distance is in first quartile
+  } else if (pred_driver_df[i, "Est..Total.Flat...Length"] < q3_dist) {
+    # Check to see if shot is high
+    if (pred_driver_df[i, "prediction_height"] > (mean_lim_height3 + sd_lim_height3 / sd_divisor3)) {
+      pred_driver_df[i, "height_class"] <- "High"
+    }
+    # Check to see if shot is low
+    if (pred_driver_df[i, "prediction_height"] < (mean_lim_height3 - sd_lim_height3 / sd_divisor3)) {
+      pred_driver_df[i, "height_class"] <- "Low"
+    }
+    # Check to see if distance is in first quartile
+  } else {
+    # Check to see if shot is high
+    if (pred_driver_df[i, "prediction_height"] > (mean_lim_height4 + sd_lim_height4 / sd_divisor4)) {
+      pred_driver_df[i, "height_class"] <- "High"
+    }
+    # Check to see if shot is low
+    if (pred_driver_df[i, "prediction_height"] < (mean_lim_height4 - sd_lim_height4 / sd_divisor4)) {
+      pred_driver_df[i, "height_class"] <- "Low"
+    }
+  }
+}
+
+```
+
+
+# Distributions
+
+```{r}
+
+# Choose the shot shape you want to investigate
+shot_shape_df <- filter(pred_driver_df, side_class == "Straight" & height_class == "Medium")
+
+par(mfrow= c(2,3))
+
+# Create a histogram for all parameters of a chosen shot shape
+hist(shot_shape_df$`Club.Speed`, breaks = 10, main = "Club Speed")
+abline(v = median(shot_shape_df$`Club.Speed`))
+hist(shot_shape_df$`Attack.Angle`, breaks = 10, main = "Attack Angle")
+abline(v = median(shot_shape_df$`Attack.Angle`))
+hist(shot_shape_df$`Swing.Plane`, breaks = 10, main = "Swing Plane")
+abline(v = median(shot_shape_df$`Swing.Plane`))
+hist(shot_shape_df$`Face.Angle`, breaks = 10, main = "Face Angle")
+abline(v = median(shot_shape_df$`Face.Angle`))
+hist(shot_shape_df$`Club.Path`, breaks = 10, main = "Club Path")
+abline(v = median(shot_shape_df$`Club.Path`))
+hist(shot_shape_df$shaft_lean, breaks = 10, main = "Shaft Lean")
+abline(v = median(shot_shape_df$shaft_lean))
+
+```
+
+
+
+# Extract Predicted Driver Parameters
+
+```{r}
+
+# Create a data frame template to keep ideal parameters
+df_ideal_driver <- data.frame(Club=character(), Height_Class=character(), Side_Class=character(),
+                       Club_Path_Angle=double(), Lie_Angle=double(), Attack_Angle=double(),
+                       Club_Speed=double(), Shaft_Lean=double(), Face_Angle=double())
+
+# Lists for shot shapes
+heights = c("High", "Medium", "Low")
+sides = c("Draw", "Straight", "Fade")
+
+# Variable for row iterator
+row = 1
+
+# Loop though each shot shape combination
+for (height in heights){
+    for (side in sides){
+        # Filter to only specific shot shape
+        shot_shape_df <- filter(pred_driver_df, side_class == side & height_class == height)
+        
+        # Store club and shot shape
+        df_ideal_driver[row, "Club"] <- "Driver"
+        df_ideal_driver[row, "Height_Class"] <- height
+        df_ideal_driver[row, "Side_Class"] <- side
+        
+        # Get ideal parameters from medians
+        df_ideal_driver[row, "Club_Path_Angle"] <- mean(shot_shape_df$`Club.Path`)
+        df_ideal_driver[row, "Lie_Angle"] <- mean(shot_shape_df$`Swing.Plane`)
+        df_ideal_driver[row, "Attack_Angle"] <- mean(shot_shape_df$`Attack.Angle`)
+        df_ideal_driver[row, "Club_Speed"] <- mean(shot_shape_df$`Club.Speed`)
+        df_ideal_driver[row, "Shaft_Lean"] <- mean(shot_shape_df$shaft_lean)
+        df_ideal_driver[row, "Face_Angle"] <- mean(shot_shape_df$`Face.Angle`)
+        
+        # Iterate to next row
+        row = row + 1
+    }
+}
+
+# Show data frame with ideal parameters
+df_ideal_driver
+
+```
+
+
+
+# Extracted Parameter Table
+
+```{r}
+library(kableExtra)
+# Dummy df for sharing table
+df_ideal_driver_sharable <- data.frame(
+    Shot_Shape = paste(df_ideal_driver$Height_Class,df_ideal_driver$Side_Class),
+    Club_Path_Angle = df_ideal_driver$Club_Path_Angle,
+    Lie_Angle = df_ideal_driver$Lie_Angle,
+    Attack_Angle = df_ideal_driver$Attack_Angle,
+    Club_Speed = df_ideal_driver$Club_Speed,
+    Shaft_Lean = df_ideal_driver$Shaft_Lean,
+    Face_Angle = df_ideal_driver$Face_Angle)
+
+# Output kable
+kable(df_ideal_driver_sharable, escape = TRUE, caption = "Ideal Parameter Estimates for Driver") %>%
+  kable_styling(latex_options = "hold_position")
+
+
+```

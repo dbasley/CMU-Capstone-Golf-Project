@@ -1,0 +1,88 @@
+---
+title: "Logistic Regression Driver"
+author: "Shiyu Wu"
+date: "2024-03-27"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# select all the driver club rows 
+data <- read.csv("Cleaned_Standard_Clubs.csv")
+driver <- subset(data, data$Club=="Driver")
+driver
+```
+
+```{r}
+
+# Calculate the mean and standard deviation of maximum height
+mean_height <- mean(driver$Max.Height...Height)
+sd_height <- sd(driver$Max.Height...Height)
+
+# create label high/medium/low
+driver$Height_Category <- ifelse(driver$Max.Height...Height > mean_height + sd_height, 'high', ifelse(driver$Max.Height...Height < mean_height - sd_height, 'low', 'medium'))
+
+# create label draw/straight/fade
+driver$Side_Category <- sapply(seq_along(driver$Max.Height...Side), function(idx) {
+  side <- driver$Max.Height...Side[idx]
+  flat_length <- driver$Est..Total.Flat...Length[idx]
+
+  # Define the function to determine straight width based on the distance
+  straight_width <- if (flat_length <= 120) {
+    5
+  } else if (flat_length < 160) {
+    10
+  } else if (flat_length < 220) {
+    15
+  } else {
+    20
+  }
+  
+  # Categorize side based on the straight width
+  if (abs(side) <= straight_width) {
+    'straight'
+  } else if (side < 0) {
+    'draw'
+  } else {
+    'fade'
+  }
+})
+
+```
+
+
+```{r}
+table(driver$Height_Category, driver$Side_Category)
+```
+
+
+```{r}
+driver$Combined_Category <- with(driver, paste(Height_Category, Side_Category, sep = "_"))
+```
+
+
+```{r}
+library("nnet")
+multinom_model <- multinom(Combined_Category ~ Club.Speed + Attack.Angle + Swing.Plane +
+                            Face.Angle + Club.Path + shaft_lean, data = driver)
+```
+
+
+```{r}
+preds <- predict(multinom_model, newdata = driver, "class")
+accuracy <- mean(preds == driver$Combined_Category)
+
+accuracy
+
+conf_matrix <- table(Predicted = preds, Actual = driver$Combined_Category)
+
+
+conf_matrix
+
+
+category_accuracies <- diag(prop.table(conf_matrix, 1))
+category_accuracies
+```

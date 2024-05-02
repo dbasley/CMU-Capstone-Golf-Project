@@ -1,0 +1,338 @@
+---
+title: "Fit Predicted Parameters to Driver Quadrants"
+output: pdf_document
+date: "2024-04-01"
+---
+
+# Load Data
+
+```{r}
+library(tidyverse)
+library(gam)
+library(kableExtra)
+# load in data
+# CHANGE PATHNAME TO WHERE YOU HAVE Cleaned_Standard_Clubs.csv
+df_st_club <- read_csv("/Users/zachstrennen/Documents/SquareFace_official_repo/2024-cmu/Data Cleaning/Output Data/Cleaned_Standard_Clubs.csv")
+# Filter df for only drivers
+df_driver_lim <- filter(df_st_club, Club == "Driver")
+```
+
+# Models and Quantiles
+
+```{r}
+# Side model
+driver_side_final <- gam(`Max Height - Side` ~ s(`Club Speed`) + s(`Attack Angle`) + s(`Swing Plane`) + s(`Face Angle`) + s(`Club Path`) + s(shaft_lean), data = df_driver_lim)
+
+
+# Height model
+driver_height_final <- gam(`Max Height - Height` ~ s(`Club Speed`) + s(`Attack Angle`) + s(`Swing Plane`) + s(`Face Angle`) + s(`Club Path`) + s(shaft_lean), data = df_driver_lim)
+
+# SPLIT THE DATA INTO QUARTERS
+# First distance quartile
+q1_dist <- quantile(df_driver_lim$`Est. Total Flat - Length`, 0.25)
+# Second Distance quartile
+median_dist <- quantile(df_driver_lim$`Est. Total Flat - Length`, 0.50)
+# Third Distance quartile
+q3_dist <- quantile(df_driver_lim$`Est. Total Flat - Length`, 0.75)
+
+# 0-25% of data, divide height standard deviation by this
+sd_divisor_side_1 <- 2
+# 25-50% of data, divide height standard deviation by this
+sd_divisor_side_2 <- 2
+# 0-25% of data, divide height standard deviation by this
+sd_divisor_side_3 <- 2
+# 25-100% of data, divide height standard deviation by this
+sd_divisor_side_4 <- 2
+
+# 0-25% of data, divide height standard deviation by this
+sd_divisor_height_1 <- 2
+# 25-50% of data, divide height standard deviation by this
+sd_divisor_height_2 <- 2
+# 0-25% of data, divide height standard deviation by this
+sd_divisor_height_3 <- 2
+# 25-100% of data, divide height standard deviation by this
+sd_divisor_height_4 <- 2
+```
+
+# Side Class from refitting
+
+```{r}
+# Get side predictions from model and stor them in a column
+df_driver_lim$prediction_side <- predict(driver_side_final, df_driver_lim)
+
+# Initially split for drivers and fades based on sign
+df_driver_lim$side_class <- ifelse(df_driver_lim$prediction_side > 0, "Draw", "Fade")
+
+# Limit data to first quartile
+df_driver_lim_side1 <- filter(df_driver_lim, `Est. Total Flat - Length` < q1_dist)
+# Get standard deviation
+sd_lim_side1 <- sd(df_driver_lim_side1$prediction_side)
+
+# Limit data to second quartile
+df_driver_lim_side2 <- filter(df_driver_lim, `Est. Total Flat - Length` >= q1_dist)
+df_driver_lim_side2 <- filter(df_driver_lim_side2, `Est. Total Flat - Length` < median_dist)
+# Get standard deviation
+sd_lim_side2 <- sd(df_driver_lim_side2$prediction_side)
+
+# Limit data to third quartile
+df_driver_lim_side3 <- filter(df_driver_lim, `Est. Total Flat - Length` >= median_dist)
+df_driver_lim_side3 <- filter(df_driver_lim_side3, `Est. Total Flat - Length` < q3_dist)
+# Get standard deviation
+sd_lim_side3 <- sd(df_driver_lim_side3$prediction_side)
+
+# Limit data to fourth quartile
+df_driver_lim_side4 <- filter(df_driver_lim, `Est. Total Flat - Length` >= q3_dist)
+# Get standard deviation
+sd_lim_side4 <- sd(df_driver_lim_side4$prediction_side)
+
+# Loop to classify striaghts
+for (i in 1:nrow(df_driver_lim)) {
+  # See if point is in the first quartile of shot distances
+  if (df_driver_lim[i, "Est. Total Flat - Length"] < q1_dist) {
+    # See if the shot meets straight criteria for q1 distance
+    if (df_driver_lim[i, "prediction_side"] < sd_lim_side1/sd_divisor_side_1 &
+      df_driver_lim[i, "prediction_side"] > -sd_lim_side1/sd_divisor_side_1) {
+      # Classify the point as a straight
+      df_driver_lim[i, "side_class"] <- "Straight"
+    }
+    # See if point is in the second quartile of shot distances
+  } else if (df_driver_lim[i, "Est. Total Flat - Length"] < median_dist) {
+    # See if the shot meets straight criteria for q2 distance
+    if (df_driver_lim[i, "prediction_side"] < sd_lim_side2/sd_divisor_side_2 &
+      df_driver_lim[i, "prediction_side"] > -sd_lim_side2/sd_divisor_side_2) {
+      # Classify the point as a straight
+      df_driver_lim[i, "side_class"] <- "Straight"
+    }
+    # See if point is in the third quartile of shot distances
+  } else if (df_driver_lim[i, "Est. Total Flat - Length"] < q3_dist) {
+    # See if the shot meets straight criteria for q3 distance
+    if (df_driver_lim[i, "prediction_side"] < sd_lim_side3/sd_divisor_side_3 &
+      df_driver_lim[i, "prediction_side"] > -sd_lim_side3/sd_divisor_side_3) {
+      # Classify the point as a straight
+      df_driver_lim[i, "side_class"] <- "Straight"
+    }
+    # See if point is in the fourth quartile of shot distances
+  } else {
+    # See if the shot meets straight criteria for q4 distance
+    if (df_driver_lim[i, "prediction_side"] < sd_lim_side4/sd_divisor_side_4 &
+      df_driver_lim[i, "prediction_side"] > -sd_lim_side4/sd_divisor_side_4) {
+      # Classify the point as a straight
+      df_driver_lim[i, "side_class"] <- "Straight"
+    }
+  }
+}
+```
+
+# Height Class from Refitting
+
+```{r}
+# Get height predictions from model
+df_driver_lim$prediction_height <- predict(driver_height_final, df_driver_lim)
+# Define height class variable with all initially Medium
+df_driver_lim$height_class <- "Medium"
+
+# Limit data to first quartile
+df_driver_lim_height1 <- filter(df_driver_lim, `Est. Total Flat - Length` < q1_dist)
+# Get mean and standard deviation
+mean_lim_height1 <- mean(df_driver_lim_height1$prediction_height)
+sd_lim_height1 <- sd(df_driver_lim_height1$prediction_height)
+
+# Limit data to second quartile
+df_driver_lim_height2 <- filter(df_driver_lim, `Est. Total Flat - Length` >= q1_dist)
+df_driver_lim_height2 <- filter(df_driver_lim_height2, `Est. Total Flat - Length` < median_dist)
+# Get mean and standard deviation
+mean_lim_height2 <- mean(df_driver_lim_height2$prediction_height)
+sd_lim_height2 <- sd(df_driver_lim_height2$prediction_height)
+
+# Limit data to third quartile
+df_driver_lim_height3 <- filter(df_driver_lim, `Est. Total Flat - Length` >= median_dist)
+df_driver_lim_height3 <- filter(df_driver_lim_height3, `Est. Total Flat - Length` < q3_dist)
+mean_lim_height3 <- mean(df_driver_lim_height3$prediction_height)
+sd_lim_height3 <- sd(df_driver_lim_height3$prediction_height)
+
+# Limit data to fourth quartile
+df_driver_lim_height4 <- filter(df_driver_lim, `Est. Total Flat - Length` >= q3_dist)
+# Get mean and standard deviation
+mean_lim_height4 <- mean(df_driver_lim_height4$prediction_height)
+sd_lim_height4 <- sd(df_driver_lim_height4$prediction_height)
+
+# For loop to classify varying heights
+for (i in 1:nrow(df_driver_lim)) {
+  # Check to see if distance is in first quartile
+  if (df_driver_lim[i, "Est. Total Flat - Length"] < q1_dist) {
+    # Check to see if shot is high
+    if (df_driver_lim[i, "prediction_height"] > (mean_lim_height1 + sd_lim_height1 / sd_divisor_height_1)) {
+      df_driver_lim[i, "height_class"] <- "High"
+    }
+    # Check to see if shot is low
+    if (df_driver_lim[i, "prediction_height"] < (mean_lim_height1 - sd_lim_height1 / sd_divisor_height_1)) {
+      df_driver_lim[i, "height_class"] <- "Low"
+    }
+    # Check to see if distance is in second quartile
+  } else if (df_driver_lim[i, "Est. Total Flat - Length"] < median_dist) {
+    # Check to see if shot is high
+    if (df_driver_lim[i, "prediction_height"] > (mean_lim_height2 + sd_lim_height2 / sd_divisor_height_2)) {
+      df_driver_lim[i, "height_class"] <- "High"
+    }
+    # Check to see if shot is low
+    if (df_driver_lim[i, "prediction_height"] < (mean_lim_height2 - sd_lim_height2 / sd_divisor_height_2)) {
+      df_driver_lim[i, "height_class"] <- "Low"
+    }
+    # Check to see if distance is in first quartile
+  } else if (df_driver_lim[i, "Est. Total Flat - Length"] < q3_dist) {
+    # Check to see if shot is high
+    if (df_driver_lim[i, "prediction_height"] > (mean_lim_height3 + sd_lim_height3 / sd_divisor_height_3)) {
+      df_driver_lim[i, "height_class"] <- "High"
+    }
+    # Check to see if shot is low
+    if (df_driver_lim[i, "prediction_height"] < (mean_lim_height3 - sd_lim_height3 / sd_divisor_height_3)) {
+      df_driver_lim[i, "height_class"] <- "Low"
+    }
+    # Check to see if distance is in first quartile
+  } else {
+    # Check to see if shot is high
+    if (df_driver_lim[i, "prediction_height"] > (mean_lim_height4 + sd_lim_height4 / sd_divisor_height_4)) {
+      df_driver_lim[i, "height_class"] <- "High"
+    }
+    # Check to see if shot is low
+    if (df_driver_lim[i, "prediction_height"] < (mean_lim_height4 - sd_lim_height4 / sd_divisor_height_4)) {
+      df_driver_lim[i, "height_class"] <- "Low"
+    }
+  }
+}
+```
+
+# View Distributions
+
+```{r}
+# Choose the shot shape you want to investigate
+shot_shape_df <- filter(df_driver_lim, side_class == "Straight" & height_class == "High")
+
+par(mfrow= c(2,3))
+
+# Create a histogram for all parameters of a chosen shot shape
+hist(shot_shape_df$`Club Speed`, breaks = 10, main = "Club Speed")
+abline(v = median(shot_shape_df$`Club Speed`))
+hist(shot_shape_df$`Attack Angle`, breaks = 10, main = "Attack Angle")
+abline(v = median(shot_shape_df$`Attack Angle`))
+hist(shot_shape_df$`Swing Plane`, breaks = 10, main = "Swing Plane")
+abline(v = median(shot_shape_df$`Swing Plane`))
+hist(shot_shape_df$`Face Angle`, breaks = 10, main = "Face Angle")
+abline(v = median(shot_shape_df$`Face Angle`))
+hist(shot_shape_df$`Club Path`, breaks = 10, main = "Club Path")
+abline(v = median(shot_shape_df$`Club Path`))
+hist(shot_shape_df$shaft_lean, breaks = 10, main = "Shaft Lean")
+abline(v = median(shot_shape_df$shaft_lean))
+```
+
+# Parameter Extraction
+
+```{r}
+# Create a data frame template to keep ideal parameters
+df_ideal_driver <- data.frame(Club=character(), Height_Class=character(), Side_Class=character(),
+                       Club_Path_Angle=double(), Lie_Angle=double(), Attack_Angle=double(),
+                       Club_Speed=double(), Shaft_Lean=double(), Face_Angle=double())
+
+# Lists for shot shapes
+heights = c("High", "Medium", "Low")
+sides = c("Draw", "Straight", "Fade")
+
+# Variable for row iterator
+row = 1
+
+# Loop though each shot shape combination
+for (height in heights){
+    for (side in sides){
+        # Filter to only specific shot shape
+        shot_shape_df <- filter(df_driver_lim, side_class == side & height_class == height)
+        
+        # Store club and shot shape
+        df_ideal_driver[row, "Club"] <- "Driver"
+        df_ideal_driver[row, "Height_Class"] <- height
+        df_ideal_driver[row, "Side_Class"] <- side
+        
+        # Get ideal parameters from medians
+        df_ideal_driver[row, "Club_Path_Angle"] <- mean(shot_shape_df$`Club Path`)
+        df_ideal_driver[row, "Lie_Angle"] <- mean(shot_shape_df$`Swing Plane`)
+        df_ideal_driver[row, "Attack_Angle"] <- mean(shot_shape_df$`Attack Angle`)
+        df_ideal_driver[row, "Club_Speed"] <- mean(shot_shape_df$`Club Speed`)
+        df_ideal_driver[row, "Shaft_Lean"] <- mean(shot_shape_df$shaft_lean)
+        df_ideal_driver[row, "Face_Angle"] <- mean(shot_shape_df$`Face Angle`)
+        
+        # Iterate to next row
+        row = row + 1
+    }
+}
+
+# Show data frame with ideal parameters
+df_ideal_driver
+```
+
+# Fit and Visualtize
+
+```{r}
+# Create dummy data frame that matches with visualization
+df_ideal_driver_mutated <- df_ideal_driver
+colnames(df_ideal_driver_mutated) <- c("Club", "Height_Class", "Side_Class",
+                                       "Club Path", "Swing Plane", "Attack Angle",
+                                       "Club Speed", "shaft_lean", "Face Angle")
+
+# Get predictions from moedls
+side_preds <- predict(driver_side_final, df_ideal_driver_mutated)
+height_preds <- predict(driver_height_final, df_ideal_driver_mutated)
+
+# Data frame with predicted spot in air
+predictions_quad <- data.frame(side_preds, height_preds)
+
+# Visualize all quadrants with the parameters landing via model
+ggplot(df_driver_lim, aes(x = `Max Height - Side`, y = `Max Height - Height`)) +
+  geom_point(alpha = 0.4) +
+  geom_vline(aes(xintercept = -sd_lim_side1/sd_divisor_side_1), col = "green") +
+  geom_vline(aes(xintercept = sd_lim_side1/sd_divisor_side_1), col = "green") +
+  geom_vline(aes(xintercept = -sd_lim_side2/sd_divisor_side_2), col = "yellow") +
+  geom_vline(aes(xintercept = sd_lim_side2/sd_divisor_side_2), col = "yellow") +
+  geom_vline(aes(xintercept = -sd_lim_side3/sd_divisor_side_3), col = "orange") +
+  geom_vline(aes(xintercept = sd_lim_side3/sd_divisor_side_3), col = "orange") +
+  geom_vline(aes(xintercept = -sd_lim_side4/sd_divisor_side_4), col = "red") +
+  geom_vline(aes(xintercept = sd_lim_side4/sd_divisor_side_4), col = "red") +
+  geom_hline(aes(yintercept = (mean_lim_height1 + sd_lim_height1 / sd_divisor_height_1)), col = "green") +
+  geom_hline(aes(yintercept = (mean_lim_height1 - sd_lim_height1 / sd_divisor_height_1)), col = "green") +
+  geom_hline(aes(yintercept = (mean_lim_height2 + sd_lim_height2 / sd_divisor_height_2)), col = "yellow") +
+  geom_hline(aes(yintercept = (mean_lim_height2 - sd_lim_height2 / sd_divisor_height_2)), col = "yellow") +
+  geom_hline(aes(yintercept = (mean_lim_height3 + sd_lim_height3 / sd_divisor_height_3)), col = "orange") +
+  geom_hline(aes(yintercept = (mean_lim_height3 - sd_lim_height3 / sd_divisor_height_3)), col = "orange") +
+  geom_hline(aes(yintercept = (mean_lim_height4 + sd_lim_height4 / sd_divisor_height_4)), col = "red") +
+  geom_hline(aes(yintercept = (mean_lim_height4 - sd_lim_height4 / sd_divisor_height_4)), col = "red") +
+  labs(
+    title = "Distribution of Shots at Max Height for a Driver",
+    subtitle = "Shot shape quadrants dependent on the distance a ball travels",
+    y = "Height (ft)",
+    x = "Side Distance (ft)"
+  ) +
+    geom_text(x = -25, y = 185, label = "Fade") +
+    geom_text(x = 0, y = 185, label = "Straight") +
+    geom_text(x = 25, y = 185, label = "Draw") +
+  theme(
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+    panel.background = element_blank(), axis.line = element_line(colour = "black")
+  ) +
+  geom_point(data = predictions_quad, aes(x = side_preds, y = height_preds), color = "purple", pch=20, size=5)
+```
+
+# Visualize table for sharing
+
+```{r}
+# Dummy df for sharing table
+df_ideal_driver_sharable <- data.frame(
+    Shot_Shape = paste(df_ideal_driver$Height_Class,df_ideal_driver$Side_Class),
+    Club_Path_Angle = df_ideal_driver$Club_Path_Angle,
+    Lie_Angle = df_ideal_driver$Lie_Angle,
+    Attack_Angle = df_ideal_driver$Attack_Angle,
+    Club_Speed = df_ideal_driver$Club_Speed,
+    Shaft_Lean = df_ideal_driver$Shaft_Lean,
+    Face_Angle = df_ideal_driver$Face_Angle)
+
+# Output kable
+kable(df_ideal_driver_sharable, escape = TRUE, caption = "Ideal Parameter Estimates for Driver from Refitting Data") %>%
+  kable_styling(latex_options = "hold_position")
+```
