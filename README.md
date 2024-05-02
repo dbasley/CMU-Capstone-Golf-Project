@@ -18,4 +18,4 @@ The directory also contains a file that concatenates all of the data sets togeth
 
 The Club Classification directory contains files on using ML tactics to classify unknown clubs to get more usable data. Initial Modeling Expirimentation just contains some early experimental files of building models and defining quadrants which are now finalized in the Parameter Extraction directory.
 
-`Final Report.Rmd` and `Final-Report.pdf` conatin the final report for the project and `QuadrantsInContext` is just a .png file used in the final report.
+`Final Report.Rmd` and `Final-Report.pdf` contain the final report for the project and `QuadrantsInContext` is just a .png file used in the final report.
